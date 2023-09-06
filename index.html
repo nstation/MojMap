@@ -93,8 +93,7 @@
         // this is so we share one instance across the JS code and the map renderer
         protocol.add(p);
 
-
-		const [,lat,lng] = location.hash.split("/");
+        const [,lat,lng] = location.hash.split("/");
 
         const map = new maplibregl.Map({
             container: 'map',
@@ -365,7 +364,7 @@
             // 初期表示（全国最新写真以外非表示）
             for (let i = 0; i < Object.keys(Map_AddLayer).length; i++) {
                 let id = Object.keys(Map_AddLayer)[i];
-                if (id != 'seamlessphoto' || id != 'source_point') {
+                if (id != 'seamlessphoto') {
                     // レイヤを非表示
                     map.setLayoutProperty(id, 'visibility', 'none');
                     this.className = '';
@@ -565,9 +564,36 @@
             map.addLayer(mvtLayer);
             */
 
-            // map.showTileBoundaries = true;
+           // map.showTileBoundaries = true;
 
-            // ポップアップ表示
+           // マーカーの追加
+           if(lat !== undefined && lng !== undefined){
+               // 初期のPoint位置
+               map.addSource('source_point', {
+                   type: 'geojson',
+                   data: {
+                       'type': 'Feature',
+                       'geometry': {
+                           'type': 'Point',
+                           'coordinates': [lng, lat],
+                       },
+                   }
+               });
+
+               // Pointのスタイルを半径10の青い丸
+               map.addLayer({
+                   'id': 'source_point',
+                   'type': 'circle',
+                   'source': 'source_point',
+                   'layout': {},
+                   'paint': {
+                       'circle-color': '#0000ff',
+                       'circle-radius': 10
+                   }
+               });
+           }
+
+           // ポップアップ表示
             map.on('click', 'fude-poligon', (e) => {
                 var lng = e.lngLat.lng;
                 var lat = e.lngLat.lat;
@@ -640,32 +666,6 @@
             map.on('mouseleave', 'fude', () => {
                 map.getCanvas().style.cursor = '';
             });
-
-            if(lat !== null && lng !== null){
-				// 初期のPoint位置
-				map.addSource('source_point', {
-					type: 'geojson',
-					data: {
-					'type': 'Feature',
-					'geometry': {
-						'type': 'Point',
-						'coordinates': [lng, lat],
-					},
-					}
-				});
-				
-				// Pointのスタイルを半径10の青い丸
-				map.addLayer({
-					'id': 'layer_point',
-					'type': 'circle',
-					'source': 'source_point',
-					'layout': {},
-					'paint': {
-						'circle-color': '#0000ff',
-						'circle-radius': 10
-					}
-				});
-			}
 
         })
     </script>
