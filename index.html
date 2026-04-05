@@ -1,5 +1,5 @@
-<html>
-
+<!doctype html>
+<html lang="ja">
 <head>
     <title>法務省地図XML（PMTiles）</title>
     <meta charset="utf-8" />
@@ -7,11 +7,15 @@
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" crossorigin="anonymous">
     <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/pmtiles@2.7.0/dist/index.js"></script>
-    <!--<link href='https://watergis.github.io/maplibre-gl-export/maplibre-gl-export.css' rel='stylesheet' />
-    <script src='https://unpkg.com/maplibre-gl@1.15.2/dist/maplibre-gl.js'></script>
-    <script src="https://watergis.github.io/maplibre-gl-export/maplibre-gl-export.js"></script>-->
-    <!--<script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>-->
+    <script src="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.css"
+        type="text/css" />
     <style>
+        html,
+        body {
+            height: 100%;
+        }
+
         body {
             margin: 0;
         }
@@ -40,7 +44,7 @@
 
         .map-overlay label {
             display: block;
-            margin: 0 0 0px;
+            margin: 0;
         }
 
         .map-overlay input {
@@ -56,15 +60,13 @@
             padding: 8px 10px;
             font: 12px/14px Arial, Helvetica, sans-serif;
             color: black;
-            background: white;
             background: rgba(255, 255, 255, 0.9);
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
             border-radius: 5px;
-            width: 240x;
+            width: 240px;
         }
     </style>
 </head>
-
 <body>
     <div id="map"></div>
     <div class="map-overlay top">
@@ -72,443 +74,265 @@
             <label>空中写真 撮影時期: <span id="slider-year-value">全国最新写真</span></label>
             <input id="slider-year" type="range" min="0" max="8" step="1" value="8">
             <label>空中写真 不透明度: <span id="slider-opacity-value">100%</span></label>
-            <input id="slider-opacity" type="range" min="0" max="100" step="0" value="100">
+            <input id="slider-opacity" type="range" min="0" max="100" step="1" value="100">
         </div>
     </div>
-    <!-- Load the `maplibre-gl-geocoder` plugin. -->
-    <script src="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.min.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.css"
-        type="text/css" />
     <script type="text/javascript">
-        // add the PMTiles plugin to the maplibregl global.
-        let protocol = new pmtiles.Protocol();
-        maplibregl.addProtocol("pmtiles", protocol.tile);
+        // =====================================================================
+        // 定数
+        // =====================================================================
+        const PMTILES_URL = 'https://habs.rad.naro.go.jp/spatial_data/amx/a.pmtiles';
+        const INITIAL_CENTER = [132.754721, 35.367103];
+        const INITIAL_ZOOM = 15;
 
-        // let PMTILES_URL = "https://protomaps.github.io/PMTiles/protomaps(vector)ODbL_firenze.pmtiles";
-        // let PMTILES_URL = "https://x.optgeo.org/ipfs/QmTZHWMAnRC5zNiNvdVuTDacThKkj4jKbwsZtKQkAC4R69";
-        let PMTILES_URL = "https://habs.rad.naro.go.jp/spatial_data/amx/a.pmtiles";
+        /** 国土地理院 空中写真ラスタレイヤ定義 */
+        const RASTER_LAYERS = [
+            {
+                id: 'ort_1928',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_1928/{z}/{x}/{y}.png'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_1928">空中写真（1928年頃）</a>',
+                label: '1928年頃(大阪市)'
+            },
+            {
+                id: 'ort_riku10',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_riku10/{z}/{x}/{y}.png'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_riku10">空中写真（1936年～1942年頃）</a>',
+                label: '1936年～1942年頃(東京23区内・大阪市)'
+            },
+            {
+                id: 'ort_USA10',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_USA10/{z}/{x}/{y}.png'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_USA10">空中写真（1945年～1950年頃）</a>',
+                label: '1945年～1950年頃'
+            },
+            {
+                id: 'ort_old10',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_old10/{z}/{x}/{y}.png'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_old10">空中写真（1961年～1969年頃）</a>',
+                label: '1961年～1969年頃'
+            },
+            {
+                id: 'gazo1',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo1">空中写真（1974年～1978年頃）</a>',
+                label: '1974年～1978年頃'
+            },
+            {
+                id: 'gazo2',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo2">空中写真（1979年～1983年頃）</a>',
+                label: '1979年～1983年頃'
+            },
+            {
+                id: 'gazo3',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo3/{z}/{x}/{y}.jpg'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo3">空中写真（1984年～1986年頃）</a>',
+                label: '1984年～1986年頃'
+            },
+            {
+                id: 'gazo4',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo4/{z}/{x}/{y}.jpg'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo4">空中写真（1987年～1990年頃）</a>',
+                label: '1987年～1990年頃'
+            },
+            {
+                id: 'seamlessphoto',
+                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#seamlessphoto">全国最新写真（シームレス）</a>',
+                label: '全国最新写真'
+            }
+        ];
 
-        const p = new pmtiles.PMTiles(PMTILES_URL)
+        const DEFAULT_LAYER_INDEX = RASTER_LAYERS.length - 1;
 
-        // this is so we share one instance across the JS code and the map renderer
-        protocol.add(p);
+        // =====================================================================
+        // PMTiles プロトコル登録
+        // =====================================================================
+        const protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol('pmtiles', protocol.tile);
 
-        const [,lat,lng] = location.hash.split("/");
+        const pmtilesInstance = new pmtiles.PMTiles(PMTILES_URL);
+        protocol.add(pmtilesInstance);
 
+        // =====================================================================
+        // URL ハッシュからマーカー座標を取得
+        // =====================================================================
+        function parseMarkerFromHash() {
+            const [, lat, lng] = location.hash.split('/');
+            if (lat === undefined || lng === undefined) return null;
+            return { lat: Number(lat), lng: Number(lng) };
+        }
+
+        const marker = parseMarkerFromHash();
+
+        // =====================================================================
+        // マップ初期化
+        // =====================================================================
         const map = new maplibregl.Map({
             container: 'map',
             style: './std.json',
-            // style: 'https://gsi-cyberjapan.github.io/gsivectortile-mapbox-gl-js/std.json',
             hash: true,
-            zoom: 15,
+            zoom: INITIAL_ZOOM,
             maxZoom: 23,
             minZoom: 4,
-            center: [132.754721, 35.367103],
-            // maplibreLogo: true,
-            // 既存Attributionを非表示
+            center: INITIAL_CENTER,
             attributionControl: false
-        })
+        });
 
-        var hoveredStateId = null;
-
-        // ズーム・回転
+        // --- コントロール追加 ---
         map.addControl(new maplibregl.NavigationControl());
-
-        // フルスクリーンモードのオンオフ
         map.addControl(new maplibregl.FullscreenControl());
-
-        // 現在位置表示
         map.addControl(new maplibregl.GeolocateControl({
-            positionOptions: {
-                enableHighAccuracy: false
-            },
+            positionOptions: { enableHighAccuracy: false },
             fitBoundsOptions: { maxZoom: 18 },
             trackUserLocation: true,
             showUserLocation: true
         }));
-
-        // スケール表示
         map.addControl(new maplibregl.ScaleControl({
             maxWidth: 200,
             unit: 'metric'
         }));
-
-        // Attributionを折りたたみ表示
         map.addControl(new maplibregl.AttributionControl({
             compact: true,
-            customAttribution: '（<a href="https://twitter.com/shi__works" target="_blank">Twitter</a> | <a href="https://github.com/shi-works/MojMap" target="_blank">Github</a>） '
+            customAttribution:
+                '（<a href="https://twitter.com/shi__works" target="_blank">Twitter</a>'
+                + ' | <a href="https://github.com/shi-works/MojMap" target="_blank">Github</a>） '
         }));
 
-        // ジオコーダー追加
-        var geocoder_api = {
+        // --- ジオコーダー ---
+        const geocoderApi = {
             forwardGeocode: async (config) => {
                 const features = [];
                 try {
-                    let request =
-                        'https://nominatim.openstreetmap.org/search?q=' +
-                        config.query +
-                        '&format=geojson&polygon_geojson=1&addressdetails=1';
-                    const response = await fetch(request);
+                    const url =
+                        'https://nominatim.openstreetmap.org/search?q='
+                        + config.query
+                        + '&format=geojson&polygon_geojson=1&addressdetails=1';
+                    const response = await fetch(url);
                     const geojson = await response.json();
-                    for (let feature of geojson.features) {
-                        let center = [
-                            feature.bbox[0] +
-                            (feature.bbox[2] - feature.bbox[0]) / 2,
-                            feature.bbox[1] +
-                            (feature.bbox[3] - feature.bbox[1]) / 2
+
+                    for (const feature of geojson.features) {
+                        const center = [
+                            feature.bbox[0] + (feature.bbox[2] - feature.bbox[0]) / 2,
+                            feature.bbox[1] + (feature.bbox[3] - feature.bbox[1]) / 2
                         ];
-                        let point = {
+                        features.push({
                             type: 'Feature',
-                            geometry: {
-                                type: 'Point',
-                                coordinates: center
-                            },
+                            geometry: { type: 'Point', coordinates: center },
                             place_name: feature.properties.display_name,
                             properties: feature.properties,
                             text: feature.properties.display_name,
                             place_type: ['place'],
-                            center: center
-                        };
-                        features.push(point);
+                            center
+                        });
                     }
                 } catch (e) {
                     console.error(`Failed to forwardGeocode with error: ${e}`);
                 }
-
-                return {
-                    features: features
-                };
+                return { features };
             }
         };
 
         map.addControl(
-            new MaplibreGeocoder(geocoder_api, {
-                maplibregl: maplibregl
-            }), 'top-left');
+            new MaplibreGeocoder(geocoderApi, { maplibregl }),
+            'top-left'
+        );
 
-        /*
-        // maplibre-gl-export
-        map.addControl(new MaplibreExportControl({
-            PageSize: Size.A4,
-            PageOrientation: PageOrientation.Portrait,
-            Format: Format.PNG,
-            DPI: DPI[96],
-            Crosshair: true,
-            PrintableArea: true,
-            Local: 'en'
-        }), 'top-right');
-        */
+        // =====================================================================
+        // スライダー制御
+        // =====================================================================
+        const sliderYear = document.getElementById('slider-year');
+        const sliderYearValue = document.getElementById('slider-year-value');
+        const sliderOpacity = document.getElementById('slider-opacity');
+        const sliderOpacityValue = document.getElementById('slider-opacity-value');
 
-        const sliderOpactiy = document.getElementById('slider-opacity');
-        const sliderOpactiyValue = document.getElementById('slider-opacity-value');
+        /** 指定 index のラスタレイヤのみ表示する */
+        function applyRasterVisibility(activeIndex) {
+            RASTER_LAYERS.forEach((layer, index) => {
+                map.setLayoutProperty(layer.id, 'visibility', index === activeIndex ? 'visible' : 'none');
+            });
+            sliderYearValue.textContent = RASTER_LAYERS[activeIndex]?.label ?? '';
+        }
 
+        /** 全ラスタレイヤの不透明度を設定する */
+        function applyRasterOpacity(opacityValue) {
+            const opacity = opacityValue / 100;
+            RASTER_LAYERS.forEach((layer) => {
+                map.setPaintProperty(layer.id, 'raster-opacity', opacity);
+            });
+            sliderOpacityValue.textContent = `${opacityValue}%`;
+        }
+
+        // =====================================================================
+        // レイヤ追加 & イベントハンドラ（map load）
+        // =====================================================================
         map.on('load', () => {
-
-            // 空中写真（1928年頃）
-            map.addSource('ort_1928', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_1928/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_1928">空中写真（1928年頃）</a>'
-            });
-
-            map.addLayer({
-                id: 'ort_1928',
-                type: 'raster',
-                source: 'ort_1928',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1936年～1942年頃）
-            map.addSource('ort_riku10', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_riku10/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_riku10">空中写真（1936年～1942年頃）</a>'
-            });
-
-            map.addLayer({
-                id: 'ort_riku10',
-                type: 'raster',
-                source: 'ort_riku10',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1945年～1950年）
-            map.addSource('ort_USA10', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_USA10/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_USA10">空中写真（1945年～1950年）</a>'
-            });
-
-            map.addLayer({
-                id: 'ort_USA10',
-                type: 'raster',
-                source: 'ort_USA10',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1961年～1969年）
-            map.addSource('ort_old10', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/ort_old10/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#ort_old10">空中写真（1961年～1969年）</a>'
-            });
-
-            map.addLayer({
-                id: 'ort_old10',
-                type: 'raster',
-                source: 'ort_old10',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1974年～1978年）
-            map.addSource('gazo1', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo1">空中写真（1974年～1978年）</a>'
-            });
-
-            map.addLayer({
-                id: 'gazo1',
-                type: 'raster',
-                source: 'gazo1',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1979年～1983年）
-            map.addSource('gazo2', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo2">空中写真（1979年～1983年）</a>'
-            });
-
-            map.addLayer({
-                id: 'gazo2',
-                type: 'raster',
-                source: 'gazo2',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1984年～1986年）
-            map.addSource('gazo3', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo3/{z}/{x}/{y}.jpg'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo3">空中写真（1984年～1986年）</a>'
-            });
-
-            map.addLayer({
-                id: 'gazo3',
-                type: 'raster',
-                source: 'gazo3',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 空中写真（1987年～1990年）
-            map.addSource('gazo4', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/gazo4/{z}/{x}/{y}.jpg'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#gazo4">空中写真（1987年～1990年）</a>'
-            });
-
-            map.addLayer({
-                id: 'gazo4',
-                type: 'raster',
-                source: 'gazo4',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // 全国最新写真（シームレス）
-            map.addSource('seamlessphoto', {
-                type: 'raster',
-                tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
-                tileSize: 256,
-                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#seamlessphoto">全国最新写真（シームレス）</a>'
-            });
-
-            map.addLayer({
-                id: 'seamlessphoto',
-                type: 'raster',
-                source: 'seamlessphoto',
-                minzoom: 14,
-                maxzoom: 23,
-            });
-
-            // レイヤ設定
-            let Map_AddLayer = {
-                'ort_1928': "0",
-                'ort_riku10': "1",
-                'ort_USA10': "2",
-                'ort_old10': "3",
-                'gazo1': "4",
-                'gazo2': "5",
-                'gazo3': "6",
-                'gazo4': "7",
-                'seamlessphoto': "8",
-            };
-
-            // 初期表示（全国最新写真以外非表示）
-            for (let i = 0; i < Object.keys(Map_AddLayer).length; i++) {
-                let id = Object.keys(Map_AddLayer)[i];
-                if (id != 'seamlessphoto') {
-                    // レイヤを非表示
-                    map.setLayoutProperty(id, 'visibility', 'none');
-                    this.className = '';
-                } else {
-                    // レイヤを表示
-                    map.setLayoutProperty(id, 'visibility', 'visible');
-                    this.className = 'active';
-                }
-            }
-
-            //　スライダーで空中写真のレイヤを制御
-            for (var i = 0; i < Object.keys(Map_AddLayer).length; i++) {
-                let id = Object.keys(Map_AddLayer)[i];
-                console.log(id)
-                console.log(Map_AddLayer[id])
-                document.getElementById('slider-year').addEventListener('input', function (e) {
-                    let year = parseInt(e.target.value);
-                    console.log(year)
-                    console.log(Map_AddLayer[id])
-                    if (year != Map_AddLayer[id]) {
-                        // レイヤを非表示
-                        map.setLayoutProperty(id, 'visibility', 'none');
-                        this.className = '';
-                    } else {
-                        // レイヤを表示
-                        map.setLayoutProperty(id, 'visibility', 'visible');
-                        this.className = 'active';
-                        if (id == 'ort_1928') {
-                            document.getElementById('slider-year-value').textContent = '1928年頃(大阪市)';
-                        } else if (id == 'ort_riku10') {
-                            document.getElementById('slider-year-value').textContent = '1936年～1942年頃(東京23区内・大阪市)';
-                        } else if (id == 'ort_USA10') {
-                            document.getElementById('slider-year-value').textContent = '1945年～1950年頃';
-                        } else if (id == 'ort_old10') {
-                            document.getElementById('slider-year-value').textContent = '1961年～1969年頃';
-                        } else if (id == 'gazo1') {
-                            document.getElementById('slider-year-value').textContent = '1974年～1978年頃';
-                        } else if (id == 'gazo2') {
-                            document.getElementById('slider-year-value').textContent = '1979年～1983年頃';
-                        } else if (id == 'gazo3') {
-                            document.getElementById('slider-year-value').textContent = '1984年～1986年頃';
-                        } else if (id == 'gazo4') {
-                            document.getElementById('slider-year-value').textContent = '1987年～1990年頃';
-                        } else if (id == 'seamlessphoto') {
-                            document.getElementById('slider-year-value').textContent = '全国最新写真';
-                        }
-                        // document.getElementById('slider-year-value').textContent = id.toString() + '年';
-                    }
+            // --- 空中写真ラスタレイヤ ---
+            RASTER_LAYERS.forEach((layer) => {
+                map.addSource(layer.id, {
+                    type: 'raster',
+                    tiles: layer.tiles,
+                    tileSize: 256,
+                    attribution: layer.attribution
                 });
-            };
-
-            // スライダーで空中写真レイヤの不透明度を制御
-            sliderOpactiy.addEventListener('input', (e) => {
-                map.setPaintProperty(
-                    'ort_1928',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'ort_riku10',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'ort_USA10',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'ort_old10',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'gazo1',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'gazo2',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'gazo3',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'gazo4',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                map.setPaintProperty(
-                    'seamlessphoto',
-                    'raster-opacity',
-                    parseInt(e.target.value, 10) / 100
-                );
-                sliderOpactiyValue.textContent = e.target.value + '%';
+                map.addLayer({
+                    id: layer.id,
+                    type: 'raster',
+                    source: layer.id,
+                    minzoom: 14,
+                    maxzoom: 23
+                });
             });
 
-            // 法務省地図XMLベクトルタイル
-            map.addSource("pmtiles", {
-                type: "vector",
-                url: "pmtiles://" + PMTILES_URL,
+            applyRasterVisibility(DEFAULT_LAYER_INDEX);
+
+            sliderYear.addEventListener('input', (e) => {
+                applyRasterVisibility(Number(e.target.value));
+            });
+            sliderOpacity.addEventListener('input', (e) => {
+                applyRasterOpacity(Number(e.target.value));
+            });
+
+            // --- 法務省地図XML ベクトルタイル ---
+            map.addSource('pmtiles', {
+                type: 'vector',
+                url: 'pmtiles://' + PMTILES_URL,
                 attribution: '<a href="https://github.com/amx-project">法務省地図XMLアダプトプロジェクト ベクトルタイル</a>'
             });
 
-            // 代表点レイヤ
+            // 代表点レイヤ（外側 glow）
             map.addLayer({
-                "id": "daihyo-1",
-                "source": "pmtiles",
-                "source-layer": "daihyo",
-                "type": "circle",
-                'paint': {
+                id: 'daihyo-1',
+                source: 'pmtiles',
+                'source-layer': 'daihyo',
+                type: 'circle',
+                paint: {
                     'circle-color': 'rgba(0, 203, 0, 0.6)',
                     'circle-blur': 0.8,
-                    //'circle-radius': 4
                     'circle-radius': 4
                 }
             });
 
-            // 代表点レイヤ
+            // 代表点レイヤ（内側）
             map.addLayer({
-                "id": "daihyo-2",
-                "source": "pmtiles",
-                "source-layer": "daihyo",
-                "type": "circle",
-                'paint': {
+                id: 'daihyo-2',
+                source: 'pmtiles',
+                'source-layer': 'daihyo',
+                type: 'circle',
+                paint: {
                     'circle-color': 'rgba(204, 255, 204, 1)',
-                    //'circle-radius': 1
                     'circle-radius': 2
                 }
             });
 
             // 筆レイヤ（ポリゴン）
             map.addLayer({
-                "id": "fude-poligon",
-                "source": "pmtiles",
-                "source-layer": "fude",
-                "type": "fill",
-                "paint": {
+                id: 'fude-polygon',
+                source: 'pmtiles',
+                'source-layer': 'fude',
+                type: 'fill',
+                paint: {
                     'fill-color': '#FFF2CC',
-                    // 'fill-opacity': 0.2,
                     'fill-opacity': [
                         'case',
                         ['boolean', ['feature-state', 'hover'], false],
@@ -520,155 +344,76 @@
 
             // 筆レイヤ（ライン）
             map.addLayer({
-                "id": "fude-line",
-                "source": "pmtiles",
-                "source-layer": "fude",
-                "type": "line",
-                "paint": {
+                id: 'fude-line',
+                source: 'pmtiles',
+                'source-layer': 'fude',
+                type: 'line',
+                paint: {
                     'line-color': '#FF3232',
                     'line-width': 1
                 }
             });
 
-            // const { MapboxLayer, MVTLayer } = deck;
-            /*
-            const mvtLayer = new MapboxLayer({
-                id: 'plateau-building-mvt',
-                type: MVTLayer,
-                data: `https://indigo-lab.github.io/plateau-lod2-mvt/{z}/{x}/{y}.pbf`,
-                minZoom: 0,
-                maxZoom: 23,
-                opacity: 0.3,
-                getFillColor: [255, 255, 255, 255],
-                lineWidthMinPixels: 1,
-                pickable: true,
-                extruded: true,
-                //押出をonにする
-                //autoHighlight: true,
-                //highlightColor: [255, 0, 0],
-                getElevation: d => d.properties.z,
-                //getElevation: d => d.properties.measuredHeight,
-                //getElevation: d => d.properties.bldg_measuredHeight,
-                wireframe: true,
-                //lineを有効にする
-                lineWidthMinPixels: 1,
-                getLineColor: [0, 0, 0],
-                material: {
-                    //立体ポリゴンのマテリアルを設定
-                    ambient: 0.1,
-                    diffuse: 0.9,
-                    shininess: 32,
-                    specularColor: [30, 30, 30]
-                }
-            });
-            map.addLayer(mvtLayer);
-            */
+            // --- ハッシュ指定マーカー ---
+            if (marker) {
+                map.addSource('source_point', {
+                    type: 'geojson',
+                    data: {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [marker.lng, marker.lat]
+                        }
+                    }
+                });
+                map.addLayer({
+                    id: 'source_point',
+                    type: 'circle',
+                    source: 'source_point',
+                    paint: {
+                        'circle-color': '#0000ff',
+                        'circle-radius': 10
+                    }
+                });
+            }
 
-           // map.showTileBoundaries = true;
+            // --- ポップアップ表示 ---
+            map.on('click', 'fude-polygon', (e) => {
+                const { lng, lat } = e.lngLat;
+                const props = e.features[0].properties;
 
-           // マーカーの追加
-           if(lat !== undefined && lng !== undefined){
-               // 初期のPoint位置
-               map.addSource('source_point', {
-                   type: 'geojson',
-                   data: {
-                       'type': 'Feature',
-                       'geometry': {
-                           'type': 'Point',
-                           'coordinates': [lng, lat],
-                       },
-                   }
-               });
+                const address = [
+                    props['市区町村名'] ?? '',
+                    props['大字名'] ?? '',
+                    props['丁目名'] ?? '',
+                    props['小字名'] ?? '',
+                    props['地番'] ?? '-'
+                ].join('');
 
-               // Pointのスタイルを半径10の青い丸
-               map.addLayer({
-                   'id': 'source_point',
-                   'type': 'circle',
-                   'source': 'source_point',
-                   'layout': {},
-                   'paint': {
-                       'circle-color': '#0000ff',
-                       'circle-radius': 10
-                   }
-               });
-           }
-
-           // ポップアップ表示
-            map.on('click', 'fude-poligon', (e) => {
-                var lng = e.lngLat.lng;
-                var lat = e.lngLat.lat;
-
-                var zahyokei = e.features[0].properties['座標系'];
-                var sokuchikeihambetsu = e.features[0].properties['測地系判別'];
-                var chizumei = e.features[0].properties['地図名'];
-                var chizubango = e.features[0].properties['地図番号'];
-                var shukushakubumbo = e.features[0].properties['縮尺分母'];
-                var shikuchosonkodo = e.features[0].properties['市区町村コード'];
-                var shikuchosommei = e.features[0].properties['市区町村名'];
-                var oazakodo = e.features[0].properties['大字コード'];
-                var chomokukodo = e.features[0].properties['丁目コード'];
-                var chomoku = e.features[0].properties['丁目名'];
-                var koazakodo = e.features[0].properties['小字コード'];
-                var yobikodo = e.features[0].properties['予備コード'];
-                var oazamei = e.features[0].properties['大字名'];
-                var koazamei = e.features[0].properties['小字名'];
-                var chiban = e.features[0].properties['地番'];
-                var seidokubun = e.features[0].properties['精度区分'];
-                var zahyochishubetsu = e.features[0].properties['座標値種別'];
-
-                if (zahyokei === undefined) { zahyokei = "-" };
-                if (sokuchikeihambetsu === undefined) { sokuchikeihambetsu = "-" };
-                if (chizumei === undefined) { chizumei = "-" };
-                if (chizubango === undefined) { chizubango = "-" };
-                if (shukushakubumbo === undefined) { shukushakubumbo = "-" };
-                if (shikuchosonkodo === undefined) { shikuchosonkodo = "-" };
-                if (shikuchosommei === undefined) { shikuchosommei = "" };
-                if (oazakodo === undefined) { oazakodo = "-" };
-                if (chomokukodo === undefined) { chomokukodo = "-" };
-                if (chomoku === undefined) { chomoku = "" };
-                if (koazakodo === undefined) { koazakodo = "-" };
-                if (yobikodo === undefined) { yobikodo = "-" };
-                if (oazamei === undefined) { oazamei = "" };
-                if (koazamei === undefined) { koazamei = "" };
-                if (chiban === undefined) { chiban = "-" };
-                if (seidokubun === undefined) { seidokubun = "-" };
-                if (zahyochishubetsu === undefined) { zahyochishubetsu = "-" };
+                const html = `
+                    <b>${address}</b><br /><br />
+                    座標系: ${props['座標系'] ?? '-'}<br>
+                    地図名: ${props['地図名'] ?? '-'}<br>
+                    縮尺分母: ${props['縮尺分母'] ?? '-'}<br>
+                    地番: ${props['地番'] ?? '-'}<br>
+                    座標: ${lat.toFixed(7)},${lng.toFixed(7)}<br /><br />
+                    <a href="https://map.yahoo.co.jp/place?lat=${lat}&lon=${lng}" target="_blank">🌎Yahoo!マップ</a><br />
+                    <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank">🌎Google Maps</a>
+                `;
 
                 new maplibregl.Popup()
                     .setLngLat(e.lngLat)
-                    .setHTML('<b>'+shikuchosommei+oazamei+chomoku+koazamei+chiban+'</b><br /><br />'
-                        + '座標系: ' + zahyokei + '<br>'
-                        // + '測地系判別: ' + sokuchikeihambetsu + '<br>'
-                        + '地図名: ' + chizumei + '<br>'
-                        // + '地図番号: ' + chizubango + '<br>'
-                        + '縮尺分母: ' + shukushakubumbo + '<br>'
-                        // + '市区町村コード: ' + shikuchosonkodo + '<br>'
-                        // + '市区町村名: ' + shikuchosommei + '<br>'
-                        // + '大字コード: ' + oazakodo + '<br>'
-                        // + '丁目コード: ' + chomokukodo + '<br>'
-                        // + '小字コード: ' + koazakodo + '<br>'
-                        // + '予備コード: ' + yobikodo + '<br>'
-                        // + '大字名: ' + oazamei + '<br>'
-                        // + '小字名: ' + koazamei + '<br>'
-                        + '地番: ' + chiban + '<br>'
-                        // + '精度区分: ' + seidokubun + '<br>'
-                        // + '座標値種別: ' + zahyochishubetsu + '<br>'
-                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br /><br />'
-                        + '<a href="https://map.yahoo.co.jp/place?lat='+lat+'&lon='+lng+'" target="_blank">🌎Yahoo!マップ</a><br />'
-                        + '<a href="https://www.google.com/maps?q='+lat+','+lng+'" target="_blank">🌎Google Maps</a>'
-                    ).addTo(map);
+                    .setHTML(html)
+                    .addTo(map);
             });
 
-            map.on('mouseenter', 'fude', () => {
+            map.on('mouseenter', 'fude-polygon', () => {
                 map.getCanvas().style.cursor = 'pointer';
             });
-
-            map.on('mouseleave', 'fude', () => {
+            map.on('mouseleave', 'fude-polygon', () => {
                 map.getCanvas().style.cursor = '';
             });
-
-        })
+        });
     </script>
 </body>
-
 </html>
